@@ -8,9 +8,11 @@ local LocalPlayer = Players.LocalPlayer
 -- GIAO DIỆN (UI) AUTO TP
 -- ==========================================
 -- Xóa GUI cũ nếu đã tồn tại
-if CoreGui:FindFirstChild("AutoTpGUI") then
-    CoreGui.AutoTpGUI:Destroy()
-end
+pcall(function()
+    if CoreGui:FindFirstChild("AutoTpGUI") then
+        CoreGui.AutoTpGUI:Destroy()
+    end
+end)
 if LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("AutoTpGUI") then
     LocalPlayer.PlayerGui.AutoTpGUI:Destroy()
 end
@@ -74,6 +76,8 @@ ScrollFrame.Size = UDim2.new(1, -20, 0, 150)
 ScrollFrame.Position = UDim2.new(0, 10, 0, 35)
 ScrollFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
 ScrollFrame.ScrollBarThickness = 4
+ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ScrollFrame.Parent = MainFrame
 Instance.new("UICorner", ScrollFrame).CornerRadius = UDim.new(0, 4)
 
@@ -149,62 +153,58 @@ local function populateList()
         end
     end
     
-    local players = Players:GetPlayers()
-    local ySize = 0
-    
-    for _, p in pairs(players) do
+    for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
             local btn = Instance.new("TextButton")
             btn.Size = UDim2.new(1, 0, 0, 25)
             
-            -- Giữ màu xanh nếu người chơi đó đang được chọn
             if targetPlayer == p then
                 btn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
             else
                 btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
             end
             
-            btn.Text = p.DisplayName
+            btn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
             btn.Font = Enum.Font.Gotham
-            btn.TextColor3 = Color3.new(1,1,1)
-            btn.TextSize = 12
+            btn.TextColor3 = Color3.new(1, 1, 1)
+            btn.TextSize = 11
+            btn.TextTruncate = Enum.TextTruncate.AtEnd
             btn.Parent = ScrollFrame
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
             
-            ySize = ySize + 30
-            
-            -- Xử lý khi chọn người chơi
             btn.MouseButton1Click:Connect(function()
                 targetPlayer = p
                 
-                -- Reset màu tất cả các nút
                 for _, childBtn in pairs(ScrollFrame:GetChildren()) do
                     if childBtn:IsA("TextButton") then
                         childBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
                     end
                 end
                 
-                -- Tô xanh nút đang chọn
                 btn.BackgroundColor3 = Color3.fromRGB(40, 180, 40)
-                
-                -- Cập nhật tiêu đề nếu đang thu nhỏ
                 updateTitleText()
             end)
         end
     end
-    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, ySize)
 end
 
 populateList()
 
--- Hàm Dịch chuyển
+-- Hàm Dịch chuyển an toàn
 local function teleportToTarget()
-    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and targetPlayer.Character:FindFirstChild("Humanoid").Health > 0 then
-        local myChar = LocalPlayer.Character
-        if myChar and myChar:FindFirstChild("HumanoidRootPart") and myChar:FindFirstChild("Humanoid").Health > 0 then
-            local targetCFrame = targetPlayer.Character.HumanoidRootPart.CFrame
-            myChar.HumanoidRootPart.CFrame = targetCFrame * CFrame.new(0, 0, 3)
-        end
+    if not targetPlayer or not targetPlayer.Character then return end
+    
+    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local targetHum = targetPlayer.Character:FindFirstChild("Humanoid")
+    
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    local myHum = myChar:FindFirstChild("Humanoid")
+    
+    if targetHRP and targetHum and targetHum.Health > 0 and myHRP and myHum and myHum.Health > 0 then
+        myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
     end
 end
 
@@ -212,7 +212,6 @@ end
 -- SỰ KIỆN NÚT BẤM
 -- ==========================================
 
--- Thu nhỏ / Phóng to GUI
 MinMaxBtn.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     if isMinimized then
@@ -244,33 +243,25 @@ CloseBtn.MouseButton1Click:Connect(function()
     ScreenGui:Destroy()
 end)
 
-RefreshBtn.MouseButton1Click:Connect(function()
-    populateList()
-end)
+RefreshBtn.MouseButton1Click:Connect(populateList)
 
 TpOnceBtn.MouseButton1Click:Connect(function()
     if targetPlayer then
         teleportToTarget()
     else
-        local oldText = Title.Text
-        local oldColor = Title.TextColor3
         Title.Text = "CHƯA CHỌN AI!"
         Title.TextColor3 = Color3.fromRGB(255, 80, 80)
         task.wait(1.5)
-        Title.Text = oldText
-        Title.TextColor3 = oldColor
+        updateTitleText()
     end
 end)
 
 AutoTpBtn.MouseButton1Click:Connect(function()
     if not targetPlayer then
-        local oldText = Title.Text
-        local oldColor = Title.TextColor3
         Title.Text = "CHƯA CHỌN AI!"
         Title.TextColor3 = Color3.fromRGB(255, 80, 80)
         task.wait(1.5)
-        Title.Text = oldText
-        Title.TextColor3 = oldColor
+        updateTitleText()
         return
     end
     
@@ -294,13 +285,11 @@ end)
 -- TỰ ĐỘNG CẬP NHẬT KHI CÓ NGƯỜI VÀO / RA
 -- ==========================================
 
--- Tự thêm vào danh sách khi có người chơi mới vào Server
 playerAddedConn = Players.PlayerAdded:Connect(function()
-    task.wait(0.5) -- Chờ thông tin người chơi tải xong
+    task.wait(0.5)
     populateList()
 end)
 
--- Tự xóa khỏi danh sách khi có người thoát Server
 playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
     if player == targetPlayer then
         targetPlayer = nil
@@ -311,4 +300,3 @@ playerRemovingConn = Players.PlayerRemoving:Connect(function(player)
     end
     populateList()
 end)
-terAdded:Connect(function() stopFly() end)
